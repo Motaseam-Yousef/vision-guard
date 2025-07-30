@@ -4,10 +4,55 @@ import os
 from PIL import Image
 import traceback
 from io import BytesIO
+import numpy as np
 
-# Import your custom models (make sure these files exist in your project)
-from models.background_remover import remove_background
-from models.image_analyzer import analyze_image_quality
+# Try to import custom models with error handling
+try:
+    from models.background_remover import remove_background
+    BACKGROUND_REMOVAL_AVAILABLE = True
+except ImportError as e:
+    st.error(f"Background removal module not available: {e}")
+    BACKGROUND_REMOVAL_AVAILABLE = False
+    
+    def remove_background(input_path, output_path):
+        """Fallback function when rembg is not available"""
+        raise ImportError("Background removal dependencies not installed")
+
+try:
+    from models.image_analyzer import analyze_image_quality
+    IMAGE_ANALYSIS_AVAILABLE = True
+except ImportError as e:
+    st.error(f"Image analysis module not available: {e}")
+    IMAGE_ANALYSIS_AVAILABLE = False
+    
+    def analyze_image_quality(image_path):
+        """Fallback function for basic image analysis using PIL only"""
+        try:
+            with Image.open(image_path) as img:
+                # Basic analysis using PIL
+                width, height = img.size
+                file_size = os.path.getsize(image_path)
+                
+                # Convert to numpy array for basic analysis
+                img_array = np.array(img.convert('L'))  # Convert to grayscale
+                
+                # Simple blur detection using Laplacian variance
+                laplacian_var = np.var(img_array)
+                
+                return {
+                    "width": width,
+                    "height": height,
+                    "file_size": file_size,
+                    "format": img.format,
+                    "mode": img.mode,
+                    "blur_score": float(laplacian_var),
+                    "blur_assessment": "Sharp" if laplacian_var > 100 else "Blurry" if laplacian_var < 50 else "Moderate",
+                    "resolution_category": "High" if width * height > 1000000 else "Medium" if width * height > 300000 else "Low",
+                    "aspect_ratio": round(width / height, 2),
+                    "total_pixels": width * height
+                }
+        except Exception as e:
+            return {"error": f"Analysis failed: {str(e)}"}
 
 # Page config
 st.set_page_config(
@@ -85,6 +130,9 @@ def show_home():
 def show_image_analysis():
     """Display image analysis interface."""
     st.header("🔍 Image Quality Analysis")
+    
+    if not IMAGE_ANALYSIS_AVAILABLE:
+        st.warning("⚠️ Advanced image analysis features are not available. Using basic analysis with PIL.")
     
     uploaded_file = st.file_uploader(
         "Choose an image file for analysis",
@@ -166,6 +214,29 @@ def show_image_analysis():
 def show_background_removal():
     """Display background removal interface."""
     st.header("✂️ Background Removal")
+    
+    if not BACKGROUND_REMOVAL_AVAILABLE:
+        st.error("❌ Background removal is not available due to missing dependencies.")
+        st.info("""
+        **To enable background removal, you need to install the following dependencies:**
+        
+        ```bash
+        pip install rembg opencv-python-headless
+        ```
+        
+        **For Streamlit Cloud deployment, add these to your `requirements.txt`:**
+        ```
+        rembg
+        opencv-python-headless
+        ```
+        
+        **You may also need a `packages.txt` file with system dependencies:**
+        ```
+        libgl1-mesa-glx
+        libglib2.0-0
+        ```
+        """)
+        return
     
     uploaded_file = st.file_uploader(
         "Choose an image file for background removal",
